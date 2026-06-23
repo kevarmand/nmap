@@ -6,7 +6,7 @@
 /*   By: ertrigna <ertrigna@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/10 15:45:51 by ertrigna          #+#    #+#             */
-/*   Updated: 2026/06/23 16:45:12 by ertrigna         ###   ########.fr       */
+/*   Updated: 2026/06/23 16:58:39 by ertrigna         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -94,10 +94,12 @@ typedef struct s_scan
 /*INIT*/
 void	init_scan(t_scan *scan);
 void	init_target(t_target *target);
-void	init_socket(t_socket *socket);
+void	init_socket_structure(t_socket *socket);
 
 /*SOCKET*/
 int		create_raw_socket(int protocol);
+int		init_socket(t_scan *scan);
+void	close_socket(t_scan *scan);
 
 /*SCANNER*/
 

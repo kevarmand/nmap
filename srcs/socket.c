@@ -6,7 +6,7 @@
 /*   By: ertrigna <ertrigna@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/10 15:59:39 by ertrigna          #+#    #+#             */
-/*   Updated: 2026/06/23 16:45:02 by ertrigna         ###   ########.fr       */
+/*   Updated: 2026/06/23 17:00:04 by ertrigna         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -34,5 +34,26 @@ int	create_raw_socket(int protocol)
 	return (sock);	
 }
 
+int	init_socket(t_scan *scan)
+{
+	scan->socket.tcp = create_raw_socket(IPPROTO_TCP)
+	if (scan->socket.tcp < 0)
+		return (-1);
+	scan->socket.udp = create_raw_socket(IPPROTO_UDP)
+	if (scan->socket.upd < 0)
+		return (-1);
+	scan->socket.icmp = create_raw_socket(IPPROTO_ICMP)
+	if (scam->socket.icmp < 0)
+		return (-1);
+	return (0);
+}
 
-
+void	close_socket(t_scan *scan)
+{
+	if (scan->socket.tcp >= 0)
+		close(scan->socket.tcp);
+	if (scan->socket.udp >= 0)
+		close(scan->socket.udp);
+	if (scan->socket.icmp >= 0)
+		close(scan->socket.icmp);
+}

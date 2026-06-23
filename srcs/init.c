@@ -6,13 +6,13 @@
 /*   By: ertrigna <ertrigna@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/23 15:49:41 by ertrigna          #+#    #+#             */
-/*   Updated: 2026/06/23 16:34:50 by ertrigna         ###   ########.fr       */
+/*   Updated: 2026/06/23 16:48:28 by ertrigna         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "nmap.h"
 
-void	init_socket(t_socket *socket)
+void	init_socket_structure(t_socket *socket)
 {
 	if (!socket)
 		return ;
@@ -34,7 +34,7 @@ void	init_scan(t_scan *scan)
 	if (!scan)
 		return;
 	memset(scan, 0, sizeof(t_scan));
-	init_socket(&scan->socket);
+	init_socket_structure(&scan->socket);
 	init_target(&scan->target);
 	scan->pcap.handle = NULL;
 	memset(scan->pcap.errbuf, 0, PCAP_ERRBUF_SIZE);

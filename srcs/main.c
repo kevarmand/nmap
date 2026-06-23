@@ -6,7 +6,7 @@
 /*   By: ertrigna <ertrigna@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/10 15:59:54 by ertrigna          #+#    #+#             */
-/*   Updated: 2026/06/23 16:39:56 by ertrigna         ###   ########.fr       */
+/*   Updated: 2026/06/23 17:04:51 by ertrigna         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -25,9 +25,24 @@ static void	print_usage()
 
 int	main(int ac, char *av[])
 {
-	if (ac < 5)
+	// if (ac < 5)
+	// {
+	// 	print_usage()
+	// 	exit (1);
+	// }
+
+	t_scan	scan;
+
+	init_scan(&scan);
+	if (init_socket(&scan) < 0)
 	{
-		print_usage()
-		exit (1);
+		fprintf(stderr, "error in socket creation");
+		return (-1);	
 	}
+	printf("TCP : %d\n", scan.socket.tcp);
+	printf("UDP : %d\n", scan.socket.udp);
+	printf("ICMP: %d\n", scan.socket.icmp);
+
+	close_socket(&scan);
+	return (0);
 }
