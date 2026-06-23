@@ -6,7 +6,7 @@
 /*   By: ertrigna <ertrigna@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/10 15:45:51 by ertrigna          #+#    #+#             */
-/*   Updated: 2026/06/23 15:57:30 by ertrigna         ###   ########.fr       */
+/*   Updated: 2026/06/23 16:45:12 by ertrigna         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,6 +21,7 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/time.h>
@@ -44,7 +45,7 @@ typedef enum e_scan_type
 
 typedef enum e_port_state
 {
-	PORT_UNKNOW,
+	PORT_UNKNOWN,
 	PORT_OPEN,
 	PORT_CLOSED,
 	PORT_FILTERED,
@@ -83,6 +84,7 @@ typedef struct s_scan
 {
 	t_target			target;
 	t_pcap				pcap;
+	t_socket			socket;
 	int					port[MAX_PORT];
 	int					port_count;
 	int					timeout_sec;
@@ -90,8 +92,12 @@ typedef struct s_scan
 } t_scan;
 
 /*INIT*/
+void	init_scan(t_scan *scan);
+void	init_target(t_target *target);
+void	init_socket(t_socket *socket);
 
 /*SOCKET*/
+int		create_raw_socket(int protocol);
 
 /*SCANNER*/
 
