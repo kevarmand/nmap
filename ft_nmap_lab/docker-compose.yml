@@ -1,0 +1,17 @@
+services:
+  target:
+    build: ./target
+    container_name: ft_nmap_target
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      ft_nmap_lab:
+        ipv4_address: 172.28.0.10
+
+networks:
+  ft_nmap_lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
