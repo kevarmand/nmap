@@ -25,8 +25,7 @@ static size_t	count_scan_types(uint32_t scan_mask)
 		count++;
 	if (scan_mask & NMAP_SCAN_ACK)
 		count++;
-	if (scan_mask & NMAP_SCAN_UDP)
-		count++;
+	/* UDP intentionally disabled for the current TCP-only engine step. */
 	return (count);
 }
 
@@ -55,8 +54,7 @@ static uint32_t	get_scan_type_at(uint32_t scan_mask, size_t index)
 		return (NMAP_SCAN_XMAS);
 	if ((scan_mask & NMAP_SCAN_ACK) && current++ == index)
 		return (NMAP_SCAN_ACK);
-	if ((scan_mask & NMAP_SCAN_UDP) && current++ == index)
-		return (NMAP_SCAN_UDP);
+	/* UDP intentionally disabled for the current TCP-only engine step. */
 	return (0);
 }
 

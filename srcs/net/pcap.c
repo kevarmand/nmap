@@ -17,9 +17,8 @@
  *
  * @return 1 on success, 0 if the filter does not fit.
  *
- * @note The filter accepts TCP, UDP and ICMP replies. TCP covers SYN, NULL,
- *       FIN, XMAS and ACK scans. UDP covers direct UDP replies. ICMP covers
- *       UDP unreachable replies and other network-level errors.
+ * @note The filter accepts TCP and ICMP replies. TCP covers SYN, NULL, FIN,
+ *       XMAS and ACK scans. ICMP covers network-level filtered errors.
  */
 static int	build_pcap_filter(t_nmap_config *config,
 		char *filter, size_t filter_size)
@@ -27,7 +26,7 @@ static int	build_pcap_filter(t_nmap_config *config,
 	int	ret;
 
 	ret = snprintf(filter, filter_size,
-			"(((tcp or udp) and src host %s and dst host %s)"
+			"((tcp and src host %s and dst host %s)"
 			" or (icmp and dst host %s))",
 			config->target.ip,
 			config->route.src_ip,

@@ -1,327 +1,413 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
+def find_config_header():
+    candidates = [
+        Path("inc/config.h"),
+        Path("includes/config.h"),
+        Path("include/config.h"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    raise FileNotFoundError("config.h not found in inc/, includes/ or include/")
+
 def replace_exact(path, old, new):
-    p = Path(path)
-    if not p.exists():
-        raise FileNotFoundError(path)
-    text = p.read_text()
+    path = Path(path)
+    text = path.read_text()
     if old not in text:
-        raise RuntimeError(f"pattern not found in {path}:\n{old[:300]}")
-    p.write_text(text.replace(old, new, 1))
+        raise RuntimeError(f"pattern not found in {path}:\n{old}")
+    path.write_text(text.replace(old, new, 1))
 
-def write_file(path, content):
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content)
+def patch_config_header():
+    import re
 
-def patch_signal():
-    replace_exact(
-        "srcs/signal/signal.c",
-        '#include "ft_nmap.h"\n\n',
-        "",
+    path = find_config_header()
+    text = path.read_text()
+
+    if "hide_uninteresting" in text:
+        print(f"{path}: hide_uninteresting already present")
+        return
+
+    pattern = re.compile(
+        r"(typedef\s+struct\s+s_nmap_cli\s*\{)(?P<body>.*?)(\}\s*t_nmap_cli\s*;)",
+        re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        raise RuntimeError(
+            f"{path}: could not find typedef struct s_nmap_cli {{ ... }} t_nmap_cli;"
+        )
+
+    body = match.group("body")
+
+    # Best place: near display/user-facing CLI options.
+    insert_line = "\tint\t\t\t\thide_uninteresting;\n"
+
+    # Try to insert after a nearby CLI option if it exists.
+    anchors = [
+        "\tint\t\t\t\tno_dns;\n",
+        "\tint\tno_dns;\n",
+        "\tint\t\t\t\thelp;\n",
+        "\tint\thelp;\n",
+        "\tint\t\t\t\tmax_in_flight;\n",
+        "\tint\tmax_in_flight;\n",
+    ]
+
+    new_body = None
+    for anchor in anchors:
+        if anchor in body:
+            new_body = body.replace(anchor, anchor + insert_line, 1)
+            break
+
+    # Fallback: insert just before the end of the struct.
+    if new_body is None:
+        if not body.endswith("\n"):
+            body += "\n"
+        new_body = body + insert_line
+
+    new_text = (
+        text[:match.start("body")]
+        + new_body
+        + text[match.end("body"):]
     )
 
-def patch_checksum():
-    write_file("srcs/packet/checksum.c", r'''#include <stddef.h>
-#include <stdint.h>
-#include <arpa/inet.h>
+    path.write_text(new_text)
+    print(f"{path}: added cli.hide_uninteresting")
 
-/**
- * @brief Compute the Internet checksum.
- *
- * @param data Buffer to checksum.
- * @param len Buffer length in bytes.
- *
- * @return 16-bit Internet checksum ready to be written in the packet.
- */
-uint16_t	nmap_checksum(const void *data, size_t len)
-{
-	const uint8_t	*bytes;
-	uint32_t		sum;
-	uint16_t		word;
+def patch_dev_config():
+    path = Path("srcs/dev_config.c")
+    text = path.read_text()
 
-	bytes = (const uint8_t *)data;
-	sum = 0;
-	while (len > 1)
-	{
-		word = ((uint16_t)bytes[0] << 8) | bytes[1];
-		sum += word;
-		bytes += 2;
-		len -= 2;
-	}
-	if (len == 1)
-		sum += ((uint16_t)bytes[0] << 8);
-	while (sum >> 16)
-		sum = (sum & 0xffff) + (sum >> 16);
-	return (htons((uint16_t)(~sum)));
-}
-''')
+    if "config->cli.hide_uninteresting" in text:
+        print(f"{path}: hide_uninteresting already initialized")
+        return
 
-def patch_udp():
-    write_file("srcs/packet/udp.c", r'''#include "config.h"
-#include "debug/debug.h"
+    needle = "config->cli.ports_arg = "
+    index = text.find(needle)
+    if index == -1:
+        raise RuntimeError(f"{path}: could not find config->cli.ports_arg assignment")
+
+    line_end = text.find("\n", index)
+    if line_end == -1:
+        raise RuntimeError(f"{path}: malformed ports_arg assignment")
+
+    insert = "\tconfig->cli.hide_uninteresting = 1;\n"
+    text = text[:line_end + 1] + insert + text[line_end + 1:]
+
+    path.write_text(text)
+    print(f"{path}: initialized cli.hide_uninteresting = 1")
+
+def patch_report():
+    path = Path("srcs/output/report.c")
+    path.write_text(r'''#include "config.h"
 
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/ip.h>
-#include <netinet/udp.h>
-
-uint16_t	nmap_checksum(const void *data, size_t len);
-
-typedef struct s_udp_pseudo_header
-{
-	uint32_t	src_addr;
-	uint32_t	dst_addr;
-	uint8_t		zero;
-	uint8_t		protocol;
-	uint16_t	udp_len;
-}	t_udp_pseudo_header;
 
 /**
- * @brief Fill the IPv4 header for a raw UDP probe.
+ * @brief Return the display name for a scan type.
  *
- * @param config Global nmap configuration.
- * @param probe Runtime probe being sent.
- * @param ip IPv4 header to fill.
- * @param packet_len Full packet length in bytes.
+ * @param scan_type Concrete scan type.
+ *
+ * @return Static scan type name.
  */
-static void	build_ip_header(t_nmap_config *config, t_probe *probe,
-		struct iphdr *ip, size_t packet_len)
+static const char	*scan_type_name(uint32_t scan_type)
 {
-	memset(ip, 0, sizeof(*ip));
-	ip->ihl = 5;
-	ip->version = 4;
-	ip->tos = 0;
-	ip->tot_len = htons((uint16_t)packet_len);
-	ip->id = htons(probe->src_port);
-	ip->frag_off = 0;
-	ip->ttl = 64;
-	ip->protocol = IPPROTO_UDP;
-	ip->saddr = config->route.src_addr.sin_addr.s_addr;
-	ip->daddr = probe->target_ip;
-	ip->check = 0;
-	ip->check = nmap_checksum(ip, sizeof(*ip));
+	if (scan_type == NMAP_SCAN_SYN)
+		return ("SYN");
+	if (scan_type == NMAP_SCAN_NULL)
+		return ("NULL");
+	if (scan_type == NMAP_SCAN_FIN)
+		return ("FIN");
+	if (scan_type == NMAP_SCAN_XMAS)
+		return ("XMAS");
+	if (scan_type == NMAP_SCAN_ACK)
+		return ("ACK");
+	if (scan_type == NMAP_SCAN_UDP)
+		return ("UDP");
+	return ("UNKNOWN");
 }
 
 /**
- * @brief Fill the UDP header for a runtime probe.
+ * @brief Return the display name for a scan result.
  *
- * @param probe Runtime probe being sent.
- * @param udp UDP header to fill.
+ * @param result Final scan result.
+ *
+ * @return Static result name.
  */
-static void	build_udp_header(t_probe *probe, struct udphdr *udp)
+static const char	*scan_result_name(t_scan_result result)
 {
-	memset(udp, 0, sizeof(*udp));
-	udp->source = htons(probe->src_port);
-	udp->dest = htons(probe->dst_port);
-	udp->len = htons(sizeof(struct udphdr));
-	udp->check = 0;
+	if (result == SCAN_RESULT_OPEN)
+		return ("open");
+	if (result == SCAN_RESULT_CLOSED)
+		return ("closed");
+	if (result == SCAN_RESULT_FILTERED)
+		return ("filtered");
+	if (result == SCAN_RESULT_UNFILTERED)
+		return ("unfiltered");
+	if (result == SCAN_RESULT_OPEN_FILTERED)
+		return ("open|filtered");
+	return ("unknown");
 }
 
 /**
- * @brief Compute and write the UDP checksum.
+ * @brief Return the display name for a non-final probe state.
  *
- * @param config Global nmap configuration.
- * @param probe Runtime probe being sent.
- * @param udp UDP header to checksum.
+ * @param state Runtime probe state.
+ *
+ * @return Static state name.
  */
-static void	set_udp_checksum(t_nmap_config *config, t_probe *probe,
-		struct udphdr *udp)
+static const char	*probe_state_name(t_probe_state state)
 {
-	unsigned char			buffer[sizeof(t_udp_pseudo_header)
-		+ sizeof(struct udphdr)];
-	t_udp_pseudo_header		pseudo;
-
-	memset(&pseudo, 0, sizeof(pseudo));
-	pseudo.src_addr = config->route.src_addr.sin_addr.s_addr;
-	pseudo.dst_addr = probe->target_ip;
-	pseudo.zero = 0;
-	pseudo.protocol = IPPROTO_UDP;
-	pseudo.udp_len = htons(sizeof(struct udphdr));
-	memcpy(buffer, &pseudo, sizeof(pseudo));
-	memcpy(buffer + sizeof(pseudo), udp, sizeof(*udp));
-	udp->check = nmap_checksum(buffer, sizeof(buffer));
-	if (udp->check == 0)
-		udp->check = 0xffff;
+	if (state == PROBE_PENDING)
+		return ("pending");
+	if (state == PROBE_IN_FLIGHT)
+		return ("in-flight");
+	if (state == PROBE_DONE)
+		return ("done");
+	return ("unknown");
 }
 
 /**
- * @brief Send one UDP probe as a raw IPv4 packet.
+ * @brief Check whether a scan type is enabled in the scan mask.
  *
  * @param config Global nmap configuration.
- * @param probe Runtime probe to send.
+ * @param scan_type Concrete scan type.
  *
- * @return 1 on success, 0 on build or send failure.
- *
- * @note The UDP probe currently has no payload. Payload profiles can be added
- *       later without changing the runtime scheduler.
+ * @return 1 if enabled, 0 otherwise.
  */
-int	nmap_send_udp_probe(t_nmap_config *config, t_probe *probe)
+static int	scan_type_enabled(t_nmap_config *config, uint32_t scan_type)
 {
-	unsigned char		packet[sizeof(struct iphdr) + sizeof(struct udphdr)];
-	struct iphdr		*ip;
-	struct udphdr		*udp;
-	struct sockaddr_in	dst;
-	size_t				packet_len;
-	ssize_t				sent;
+	return ((config->scan.scan_mask & scan_type) != 0);
+}
 
-	if (!config || !probe)
-		return (0);
-	packet_len = sizeof(packet);
-	memset(packet, 0, sizeof(packet));
-	ip = (struct iphdr *)packet;
-	udp = (struct udphdr *)(packet + sizeof(struct iphdr));
-	build_ip_header(config, probe, ip, packet_len);
-	build_udp_header(probe, udp);
-	set_udp_checksum(config, probe, udp);
-	memset(&dst, 0, sizeof(dst));
-	dst.sin_family = AF_INET;
-	dst.sin_addr.s_addr = probe->target_ip;
-	dst.sin_port = htons(probe->dst_port);
-	DEBUG_SEND_PACKET(packet, packet_len);
-	sent = sendto(config->socket.send_fd, packet, packet_len, 0,
-			(struct sockaddr *)&dst, sizeof(dst));
-	if (sent < 0 || (size_t)sent != packet_len)
+/**
+ * @brief Return the display string for a probe.
+ *
+ * @param probe Probe to display.
+ *
+ * @return Probe result if done, otherwise runtime state.
+ */
+static const char	*probe_display_result(t_probe *probe)
+{
+	if (!probe)
+		return ("unknown");
+	if (probe->state != PROBE_DONE)
+		return (probe_state_name(probe->state));
+	return (scan_result_name(probe->result));
+}
+
+/**
+ * @brief Find a probe by port and scan type.
+ *
+ * @param config Global nmap configuration.
+ * @param port Destination port.
+ * @param scan_type Concrete scan type.
+ *
+ * @return Matching probe, or NULL if not found.
+ */
+static t_probe	*find_probe(t_nmap_config *config,
+		uint16_t port, uint32_t scan_type)
+{
+	size_t	i;
+
+	i = 0;
+	while (i < config->runtime.probe_count)
 	{
-		perror("ft_nmap: sendto");
-		return (0);
+		if (config->runtime.probes[i].dst_port == port
+			&& config->runtime.probes[i].scan_type == scan_type)
+			return (&config->runtime.probes[i]);
+		i++;
 	}
-	return (1);
+	return (NULL);
+}
+
+/**
+ * @brief Check whether a final result is boring for a scan type.
+ *
+ * @param probe Probe to check.
+ *
+ * @return 1 if the result is uninteresting, 0 otherwise.
+ *
+ * @note This is only a display filter. It does not change probe results.
+ */
+static int	probe_result_is_uninteresting(t_probe *probe)
+{
+	if (!probe)
+		return (0);
+	if (probe->state != PROBE_DONE)
+		return (0);
+	if (probe->scan_type == NMAP_SCAN_ACK
+		&& probe->result == SCAN_RESULT_UNFILTERED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_SYN
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_NULL
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_FIN
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_XMAS
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_UDP
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	return (0);
+}
+
+/**
+ * @brief Check whether one scan column makes a port line interesting.
+ *
+ * @param config Global nmap configuration.
+ * @param port Destination port.
+ * @param scan_type Concrete scan type.
+ *
+ * @return 1 if this scan result should keep the line visible, 0 otherwise.
+ */
+static int	scan_column_is_interesting(t_nmap_config *config,
+		uint16_t port, uint32_t scan_type)
+{
+	t_probe	*probe;
+
+	if (!scan_type_enabled(config, scan_type))
+		return (0);
+	probe = find_probe(config, port, scan_type);
+	if (!probe)
+		return (1);
+	return (!probe_result_is_uninteresting(probe));
+}
+
+/**
+ * @brief Check whether a port line should be printed.
+ *
+ * @param config Global nmap configuration.
+ * @param port Destination port.
+ *
+ * @return 1 if the line should be printed, 0 if it can be hidden.
+ */
+static int	port_line_is_interesting(t_nmap_config *config, uint16_t port)
+{
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_SYN))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_NULL))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_FIN))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_XMAS))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_ACK))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_UDP))
+		return (1);
+	return (0);
+}
+
+/**
+ * @brief Print one enabled scan column in the header.
+ *
+ * @param config Global nmap configuration.
+ * @param scan_type Concrete scan type.
+ */
+static void	print_header_column(t_nmap_config *config, uint32_t scan_type)
+{
+	if (scan_type_enabled(config, scan_type))
+		printf("%-16s", scan_type_name(scan_type));
+}
+
+/**
+ * @brief Print the report header.
+ *
+ * @param config Global nmap configuration.
+ */
+static void	print_report_header(t_nmap_config *config)
+{
+	printf("%-8s", "PORT");
+	print_header_column(config, NMAP_SCAN_SYN);
+	print_header_column(config, NMAP_SCAN_NULL);
+	print_header_column(config, NMAP_SCAN_FIN);
+	print_header_column(config, NMAP_SCAN_XMAS);
+	print_header_column(config, NMAP_SCAN_ACK);
+	print_header_column(config, NMAP_SCAN_UDP);
+	printf("\n");
+}
+
+/**
+ * @brief Print one scan result column for a port.
+ *
+ * @param config Global nmap configuration.
+ * @param port Destination port.
+ * @param scan_type Concrete scan type.
+ */
+static void	print_result_column(t_nmap_config *config,
+		uint16_t port, uint32_t scan_type)
+{
+	t_probe	*probe;
+
+	if (!scan_type_enabled(config, scan_type))
+		return ;
+	probe = find_probe(config, port, scan_type);
+	printf("%-16s", probe_display_result(probe));
+}
+
+/**
+ * @brief Print one destination port line.
+ *
+ * @param config Global nmap configuration.
+ * @param port Destination port.
+ */
+static void	print_port_line(t_nmap_config *config, uint16_t port)
+{
+	printf("%-8u", port);
+	print_result_column(config, port, NMAP_SCAN_SYN);
+	print_result_column(config, port, NMAP_SCAN_NULL);
+	print_result_column(config, port, NMAP_SCAN_FIN);
+	print_result_column(config, port, NMAP_SCAN_XMAS);
+	print_result_column(config, port, NMAP_SCAN_ACK);
+	print_result_column(config, port, NMAP_SCAN_UDP);
+	printf("\n");
+}
+
+/**
+ * @brief Print the final scan report.
+ *
+ * @param config Global nmap configuration.
+ *
+ * @note The report does not classify or modify probes. It only displays the
+ *       final state already produced by runtime/recv.c and runtime/expire.c.
+ */
+void	nmap_print_report(t_nmap_config *config)
+{
+	size_t	i;
+
+	if (!config)
+		return ;
+	printf("Scan report for %s (%s)\n", config->cli.target,
+		config->target.ip);
+	printf("Probes: %zu total, %zu done, %zu in flight\n\n",
+		config->runtime.probe_count,
+		config->runtime.done_count,
+		config->runtime.in_flight_count);
+	print_report_header(config);
+	i = 0;
+	while (i < config->scan.port_count)
+	{
+		if (!config->cli.hide_uninteresting
+			|| port_line_is_interesting(config, config->scan.ports[i]))
+			print_port_line(config, config->scan.ports[i]);
+		i++;
+	}
 }
 ''')
-
-def patch_init_seq():
-    replace_exact(
-        "srcs/runtime/init.c",
-        "	probe->seq = 0;",
-        "	probe->seq = 0x10000000u + (uint32_t)index;",
-    )
-
-def patch_recv():
-    path = "srcs/runtime/recv.c"
-
-    replace_exact(
-        path,
-        "#include <stdio.h>\n#include <pcap/pcap.h>",
-        "#include <stdio.h>\n#include <netinet/in.h>\n#include <pcap/pcap.h>",
-    )
-
-    replace_exact(
-        path,
-r'''static int	reply_matches_direct_probe(t_probe *probe, t_nmap_reply *reply)
-{
-	if (reply->src_ip != probe->target_ip)
-		return (0);
-	if (reply->src_port != probe->dst_port)
-		return (0);
-	if (reply->dst_port != probe->src_port)
-		return (0);
-	if (reply->type == NMAP_REPLY_TCP && probe->scan_type != NMAP_SCAN_UDP)
-		return (1);
-	if (reply->type == NMAP_REPLY_UDP && probe->scan_type == NMAP_SCAN_UDP)
-		return (1);
-	return (0);
-}''',
-r'''static int	reply_matches_direct_probe(t_nmap_config *config,
-		t_probe *probe, t_nmap_reply *reply)
-{
-	if (reply->src_ip != probe->target_ip)
-		return (0);
-	if (reply->dst_ip != config->route.src_addr.sin_addr.s_addr)
-		return (0);
-	if (reply->src_port != probe->dst_port)
-		return (0);
-	if (reply->dst_port != probe->src_port)
-		return (0);
-	if (reply->type == NMAP_REPLY_TCP && probe->scan_type != NMAP_SCAN_UDP)
-		return (1);
-	if (reply->type == NMAP_REPLY_UDP && probe->scan_type == NMAP_SCAN_UDP)
-		return (1);
-	return (0);
-}''',
-    )
-
-    replace_exact(
-        path,
-r'''static int	reply_matches_icmp_probe(t_probe *probe, t_nmap_reply *reply)
-{
-	if (reply->original_dst_ip != probe->target_ip)
-		return (0);
-	if (reply->original_dst_port != probe->dst_port)
-		return (0);
-	if (reply->original_src_port != probe->src_port)
-		return (0);
-	if (reply->original_protocol == IPPROTO_TCP
-		&& probe->scan_type != NMAP_SCAN_UDP)
-		return (1);
-	if (reply->original_protocol == IPPROTO_UDP
-		&& probe->scan_type == NMAP_SCAN_UDP)
-		return (1);
-	return (0);
-}''',
-r'''static int	reply_matches_icmp_probe(t_nmap_config *config,
-		t_probe *probe, t_nmap_reply *reply)
-{
-	if (reply->original_src_ip != config->route.src_addr.sin_addr.s_addr)
-		return (0);
-	if (reply->original_dst_ip != probe->target_ip)
-		return (0);
-	if (reply->original_dst_port != probe->dst_port)
-		return (0);
-	if (reply->original_src_port != probe->src_port)
-		return (0);
-	if (reply->original_protocol == IPPROTO_TCP
-		&& probe->scan_type != NMAP_SCAN_UDP)
-		return (1);
-	if (reply->original_protocol == IPPROTO_UDP
-		&& probe->scan_type == NMAP_SCAN_UDP)
-		return (1);
-	return (0);
-}''',
-    )
-
-    replace_exact(
-        path,
-r'''static int	reply_matches_probe(t_probe *probe, t_nmap_reply *reply)
-{
-	if (probe->state != PROBE_IN_FLIGHT)
-		return (0);
-	if (reply->type == NMAP_REPLY_TCP || reply->type == NMAP_REPLY_UDP)
-		return (reply_matches_direct_probe(probe, reply));
-	if (reply->type == NMAP_REPLY_ICMP)
-		return (reply_matches_icmp_probe(probe, reply));
-	return (0);
-}''',
-r'''static int	reply_matches_probe(t_nmap_config *config,
-		t_probe *probe, t_nmap_reply *reply)
-{
-	if (probe->state != PROBE_IN_FLIGHT)
-		return (0);
-	if (reply->type == NMAP_REPLY_TCP || reply->type == NMAP_REPLY_UDP)
-		return (reply_matches_direct_probe(config, probe, reply));
-	if (reply->type == NMAP_REPLY_ICMP)
-		return (reply_matches_icmp_probe(config, probe, reply));
-	return (0);
-}''',
-    )
-
-    replace_exact(
-        path,
-        "		if (reply_matches_probe(&config->runtime.probes[i], reply))",
-        "		if (reply_matches_probe(config, &config->runtime.probes[i], reply))",
-    )
+    print(f"{path}: replaced with hide_uninteresting support")
 
 def main():
-    patch_signal()
-    patch_checksum()
-    patch_udp()
-    patch_init_seq()
-    patch_recv()
-    print("inconsistency patch applied")
+    patch_config_header()
+    patch_dev_config()
+    patch_report()
+    print("hide_uninteresting display option added")
 
 if __name__ == "__main__":
     main()

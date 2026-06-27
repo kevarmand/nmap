@@ -121,6 +121,89 @@ static t_probe	*find_probe(t_nmap_config *config,
 }
 
 /**
+ * @brief Check whether a final result is boring for a scan type.
+ *
+ * @param probe Probe to check.
+ *
+ * @return 1 if the result is uninteresting, 0 otherwise.
+ *
+ * @note This is only a display filter. It does not change probe results.
+ */
+static int	probe_result_is_uninteresting(t_probe *probe)
+{
+	if (!probe)
+		return (0);
+	if (probe->state != PROBE_DONE)
+		return (0);
+	if (probe->scan_type == NMAP_SCAN_ACK
+		&& probe->result == SCAN_RESULT_UNFILTERED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_SYN
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_NULL
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_FIN
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_XMAS
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	if (probe->scan_type == NMAP_SCAN_UDP
+		&& probe->result == SCAN_RESULT_CLOSED)
+		return (1);
+	return (0);
+}
+
+/**
+ * @brief Check whether one scan column makes a port line interesting.
+ *
+ * @param config Global nmap configuration.
+ * @param port Destination port.
+ * @param scan_type Concrete scan type.
+ *
+ * @return 1 if this scan result should keep the line visible, 0 otherwise.
+ */
+static int	scan_column_is_interesting(t_nmap_config *config,
+		uint16_t port, uint32_t scan_type)
+{
+	t_probe	*probe;
+
+	if (!scan_type_enabled(config, scan_type))
+		return (0);
+	probe = find_probe(config, port, scan_type);
+	if (!probe)
+		return (1);
+	return (!probe_result_is_uninteresting(probe));
+}
+
+/**
+ * @brief Check whether a port line should be printed.
+ *
+ * @param config Global nmap configuration.
+ * @param port Destination port.
+ *
+ * @return 1 if the line should be printed, 0 if it can be hidden.
+ */
+static int	port_line_is_interesting(t_nmap_config *config, uint16_t port)
+{
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_SYN))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_NULL))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_FIN))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_XMAS))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_ACK))
+		return (1);
+	if (scan_column_is_interesting(config, port, NMAP_SCAN_UDP))
+		return (1);
+	return (0);
+}
+
+/**
  * @brief Print one enabled scan column in the header.
  *
  * @param config Global nmap configuration.
@@ -209,7 +292,9 @@ void	nmap_print_report(t_nmap_config *config)
 	i = 0;
 	while (i < config->scan.port_count)
 	{
-		print_port_line(config, config->scan.ports[i]);
+		if (!config->cli.hide_uninteresting
+			|| port_line_is_interesting(config, config->scan.ports[i]))
+			print_port_line(config, config->scan.ports[i]);
 		i++;
 	}
 }

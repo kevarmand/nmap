@@ -5,7 +5,6 @@
 #include <sys/time.h>
 
 int	nmap_send_tcp_probe(t_nmap_config *config, t_probe *probe);
-int	nmap_send_udp_probe(t_nmap_config *config, t_probe *probe);
 
 /**
  * @brief Return current time in milliseconds.
@@ -51,9 +50,7 @@ static int	send_probe(t_nmap_config *config, t_probe *probe)
 {
 	if (is_tcp_scan(probe->scan_type))
 		return (nmap_send_tcp_probe(config, probe));
-	if (probe->scan_type == NMAP_SCAN_UDP)
-		return (nmap_send_udp_probe(config, probe));
-	fprintf(stderr, "ft_nmap: invalid scan type: 0x%x\n", probe->scan_type);
+	fprintf(stderr, "ft_nmap: invalid TCP scan type: 0x%x\n", probe->scan_type);
 	return (0);
 }
 

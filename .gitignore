@@ -1,2 +1,24 @@
-#vscode config
-.vscode
+# Objects / dependencies
+*.o
+*.d
+
+# Build directories
+objs/
+objs_debug/
+
+# Binary
+ft_nmap
+
+# Temporary debug / dump files
+dump.txt
+*.dump
+
+# Local helper scripts
+tot.py
+tot.sh
+copy.sh
+
+# Editor / system noise
+.vscode/
+.idea/
+.DS_Store

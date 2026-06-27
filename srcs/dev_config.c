@@ -69,7 +69,8 @@ int	nmap_load_hardcoded_dev_config(t_nmap_config *config)
 	config->cli.program_name = "./ft_nmap";
 	config->cli.target = "172.28.0.10";
 	config->cli.ports_arg = "20-25";
-	config->cli.scan_mask = NMAP_SCAN_SYN;
+	config->cli.hide_uninteresting = 1;
+	config->cli.scan_mask = NMAP_SCAN_ACK; // (NMAP_SCAN_SYN | NMAP_SCAN_NULL | NMAP_SCAN_FIN | NMAP_SCAN_XMAS | NMAP_SCAN_ACK);
 	config->cli.timeout_ms = 1000;
 	config->cli.max_in_flight = 50;
 
@@ -82,7 +83,7 @@ int	nmap_load_hardcoded_dev_config(t_nmap_config *config)
 
 	if (!set_scan_ports(&config->scan))
 		return (0);
-	config->scan.scan_mask = NMAP_SCAN_SYN;
+	config->scan.scan_mask = (NMAP_SCAN_SYN | NMAP_SCAN_NULL | NMAP_SCAN_FIN | NMAP_SCAN_XMAS | NMAP_SCAN_ACK);
 	config->scan.src_port_base = 40000;
 	config->scan.timeout_ms = 1000;
 	config->scan.max_in_flight = 50;

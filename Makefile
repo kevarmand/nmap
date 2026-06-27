@@ -48,7 +48,6 @@ SRCS :=	srcs/main.c \
 		srcs/runtime/wait.c \
 		srcs/runtime/classify.c \
 		srcs/output/report.c \
-		srcs/packet/udp.c \
 		srcs/packet/parse.c
 
 DEBUG_SRCS :=	$(SRCS) \

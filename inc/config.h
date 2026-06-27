@@ -47,6 +47,7 @@ typedef struct s_nmap_cli
 	int			cli_error;
 	const char	*bad_arg;
 	int			bad_index;
+	int				hide_uninteresting;
 }	t_nmap_cli;
 
 typedef struct s_nmap_target
